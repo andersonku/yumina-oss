@@ -59,6 +59,32 @@ Data lives in `packages/server/data` by default: the embedded PostgreSQL databas
 
 Keys are added in the app, not in config files. Supported: OpenRouter, Anthropic, OpenAI, Google, Ollama (local, default `http://localhost:11434`), and any OpenAI-compatible URL such as DeepSeek, LM Studio, KoboldCpp, TabbyAPI or vLLM. Keys are encrypted at rest with AES-256-GCM using a key derived from `BETTER_AUTH_SECRET`.
 
+### Using your Antigravity Google sign-in
+
+Install the official [Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli) and run `agy` once to sign in with Google. Yumina can reuse its cached OAuth session on this computer. Open **Settings → AI config → Use Antigravity on this computer**, choose **Check connection**, select a model from your account, then choose **Use Antigravity**. Gemini, Claude and other models appear according to your account's current catalog and access limits.
+
+This connection requires the local edition bound to localhost. Yumina calls the official CLI, stores only a connection marker and model preference, and leaves token storage and refresh to Antigravity. **Disconnect from Yumina** keeps Antigravity signed in. If needed, set `YUMINA_ANTIGRAVITY_PATH` to the absolute path of `agy`. API-key and ADC billing configurations must be switched to personal Google sign-in in the official CLI first.
+
+The integration supports text conversations and streams responses. Images, application tool calls and JSON Schema side completions need another provider. Antigravity controls generation settings and may save conversation history in its own data directory. Each reply runs in a temporary workspace with a conversation-only agent that excludes shell, file, browser and MCP tools.
+
+### Using your Claude Code subscription
+
+For a personal installation, install the official [Claude Code CLI](https://code.claude.com/docs/en/setup), run `claude auth login` in Terminal, and sign in with your Claude subscription. In Yumina, open **Settings → AI config → Use Claude Code on this computer**, choose **Check connection**, then select Sonnet, Opus or Haiku and choose **Use Claude Code**. Model aliases follow the CLI's current versions; access and usage limits depend on your account.
+
+Yumina must run on the same computer, bound to `localhost` or `127.0.0.1`. This connection uses the unmodified official CLI's `--print` streaming mode and its existing login. Yumina stores only a connection marker and model preference. **Disconnect from Yumina** removes that marker; it leaves your CLI signed in. To sign out of Claude Code itself, run `claude auth logout`. If the binary is outside PATH and `~/.local/bin`, set `YUMINA_CLAUDE_CODE_PATH` to its absolute path before starting Yumina.
+
+This connection currently supports text conversations, including their ordered history and world instructions. Images, tool calling and JSON Schema side completions require another provider. Coding tools, MCP servers, hooks, project settings and CLI session persistence are disabled for these requests. One reply runs at a time. CLI model defaults apply to sampling and output length. CLI startup and replaying conversation history can add latency. Requests use your Claude plan's limits and remain subject to [Anthropic's authentication and integration conditions](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).
+
+### Using your ChatGPT plan
+
+On the computer running Yumina, open **Settings → AI config → Use your ChatGPT plan** and choose **Continue with ChatGPT**. Complete browser sign-in and authorize plan usage, then choose an available model. The connection becomes the active provider. No OpenAI API key or Ollama installation is required for this option.
+
+This integration uses OpenAI's [OAuth flow for local and open-source apps](https://developers.openai.com/siwc/token-sharing-open-source) and the Responses API. Requests count against your ChatGPT plan or credits, subject to account/workspace permissions and shared usage limits. Use **Manage usage** to review limits in ChatGPT settings. Model availability is account-specific; a successful request confirms access.
+
+Connect through `localhost` on the same computer as the server. Sign-in temporarily opens a callback listener bound to `127.0.0.1` on an available port. Tokens are encrypted in the existing provider-profile database and refresh automatically. The stable host identifier is stored in `chatgpt-host-id` under the data directory. Keep the data directory and encryption secret when moving or backing up an installation. Multiple accounts are stored separately. **Disconnect** attempts remote session revocation and clears local tokens while retaining the registration for another sign-in. If revocation cannot be confirmed, disconnect Yumina in ChatGPT settings too.
+
+Text chat, tool calls, and compatible image inputs are supported. This flow does not provide image generation or audio APIs. Its current preview also omits sampling and output-token-limit parameters. Ollama and API-key providers remain available in the same settings page.
+
 ### Cards
 
 Import: Yumina `.png` or `.json` cards, plus character cards and worldbooks in the community [V2](https://github.com/malfoyslastname/character-card-spec-v2) and [V3](https://github.com/kwaroran/character-card-spec-v3) formats. Export: any world as a Yumina PNG card (JSON embedded in a `tEXt` chunk) or plain JSON.

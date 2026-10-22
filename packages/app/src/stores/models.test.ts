@@ -18,6 +18,63 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = originalFetch; });
 
+for (const activeProvider of ["chatgpt", "openrouter"]) {
+  test(`${activeProvider} selection keeps both ChatGPT and OpenRouter catalogs available`, async () => {
+    select(activeProvider);
+    const paths: string[] = [];
+    globalThis.fetch = (async url => {
+      const path = String(url);
+      paths.push(path);
+      if (path.endsWith("/keys")) return reply([
+        { id: "openrouter-old", provider: "openrouter", metadata: { models: ["old/model"] }, createdAt: "2026-10-01" },
+        { id: "chatgpt", provider: "chatgpt", metadata: { models: ["plan-model"] }, createdAt: "2026-10-22" },
+        { id: "openrouter", provider: "openrouter", metadata: null, createdAt: "2026-10-22" },
+      ]);
+      if (path.includes("/chatgpt/")) return reply({ ok: true, models: ["plan-model"] });
+      if (path.includes("/openrouter/")) return reply({ ok: true, models: ["anthropic/api-model"] });
+      throw new Error(`Unexpected catalog request: ${path}`);
+    }) as typeof fetch;
+    await useModelsStore.getState().fetchModels();
+    assert.deepEqual(useModelsStore.getState().models.map(m => m.id).sort(), ["anthropic/api-model", "chatgpt/plan-model"]);
+    assert.equal(paths.filter(path => path.includes("list-models")).length, 2);
+    assert.equal(useUserProfileStore.getState().profile?.preferences?.activeApiKeyId, activeProvider);
+  });
+}
+
+test("OpenRouter discovery failure does not hide connected ChatGPT models", async () => {
+  select("chatgpt");
+  globalThis.fetch = (async url => {
+    const path = String(url);
+    if (path.endsWith("/keys")) return reply([
+      { id: "chatgpt", provider: "chatgpt", metadata: { models: ["plan-model"] } },
+      { id: "router", provider: "openrouter", metadata: { models: ["google/saved-model"] } },
+    ]);
+    if (path.includes("/router/")) throw new Error("offline");
+    return reply({ ok: true, models: ["plan-model"] });
+  }) as typeof fetch;
+  await useModelsStore.getState().fetchModels();
+  assert.deepEqual(useModelsStore.getState().models.map(m => m.id).sort(), ["chatgpt/plan-model", "google/saved-model"]);
+});
+
+test("disconnect invalidation prevents a pending catalog for the same profile from returning", async () => {
+  let finishOld: ((response: Response) => void) | undefined;
+  let disconnected = false;
+  globalThis.fetch = (async url => {
+    if (String(url).endsWith("/keys")) return reply([{ id: "a", provider: "chatgpt", metadata: { models: disconnected ? [] : ["old"] } }]);
+    if (disconnected) return reply({ ok: false, models: [] });
+    return new Promise<Response>(resolve => { finishOld = resolve; });
+  }) as typeof fetch;
+  const previous = useModelsStore.getState().fetchModels();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(useModelsStore.getState().models[0]?.id, "chatgpt/old");
+  disconnected = true;
+  useModelsStore.getState().invalidateModels();
+  await useModelsStore.getState().fetchModels();
+  finishOld!(reply({ ok: true, models: ["stale"] }));
+  await previous;
+  assert.deepEqual(useModelsStore.getState().models, []);
+});
+
 test("saved private catalogs refresh upstream and expose the cache while waiting", async () => {
   let finish: ((value: Response) => void) | undefined;
   let calls = 0;

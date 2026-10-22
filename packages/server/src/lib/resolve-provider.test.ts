@@ -18,3 +18,7 @@ test("inferProvider: non-custom prefixes still work", () => {
   assert.equal(inferProvider("ollama/llama3"), "ollama");
   assert.equal(inferProvider("deepseek/deepseek-v3.2"), "openrouter"); // default
 });
+
+test("inferProvider: ChatGPT plan models have a separate route from API keys", () => {
+  assert.equal(inferProvider("chatgpt/fixture-model"), "chatgpt");
+});

@@ -178,7 +178,7 @@ completionRoutes.post("/sessions/:sessionId/completions", bodyLimit({ maxSize: 2
     return c.json({ error: "No API key available for this model" }, 400);
   }
 
-  if (responseFormat?.type === "json_schema" && resolved.providerName !== "openrouter") {
+  if (responseFormat?.type === "json_schema" && resolved.providerName !== "openrouter" && resolved.providerName !== "chatgpt") {
     return c.json({ error: "This provider does not support JSON Schema side completions.", code: "UNSUPPORTED_RESPONSE_FORMAT" }, 400);
   }
 

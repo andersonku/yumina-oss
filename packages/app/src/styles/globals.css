@@ -2008,6 +2008,65 @@ html:lang(zh) .hub-hero--world .hub-hero-subtitle {
   word-break: break-word;
 }
 
+/* Editing needs an opaque surface: story themes can put the transcript on
+   light paper while retaining the platform's pale foreground tokens. The
+   composer guard also checks the painted colours after creator styles land. */
+#sandbox-root .play-message-editor {
+  padding: 0.75rem !important;
+  border: 1px solid var(--color-primary) !important;
+  border-radius: 0.5rem !important;
+  background: var(--color-card) !important;
+  color: var(--color-card-foreground) !important;
+  text-align: left !important;
+}
+
+#sandbox-root .play-message-editor__input {
+  display: block !important;
+  width: 100% !important;
+  min-height: 5rem !important;
+  padding: 0.25rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--color-card-foreground) !important;
+  caret-color: currentColor !important;
+  text-align: left !important;
+}
+
+#sandbox-root .play-message-editor:focus-within {
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: 2px !important;
+}
+
+#sandbox-root :is(.play-message-editor__cancel, .play-message-editor__save) {
+  border: 1px solid currentColor !important;
+  color: var(--color-card-foreground) !important;
+  background: transparent !important;
+}
+
+#sandbox-root .play-message-editor__save {
+  border-color: transparent !important;
+  background: var(--color-primary) !important;
+  color: var(--color-primary-foreground) !important;
+}
+
+#sandbox-root .play-message-editor :is(button, kbd, svg) {
+  -webkit-text-fill-color: currentColor;
+}
+
+#sandbox-root .play-message-editor button:hover {
+  filter: brightness(1.12);
+}
+
+#sandbox-root .play-message-editor button:focus-visible {
+  outline: 2px solid currentColor !important;
+  outline-offset: 2px !important;
+}
+
+#sandbox-root .play-message-editor button:disabled {
+  cursor: wait;
+  border-style: dashed !important;
+}
+
 /* Chat prose must be directly selectable/copyable (community feedback
    2026-08-05): the sandbox document disables selection globally
    (sandbox/index.html user-select:none on html/body/#sandbox-root), which
@@ -5465,7 +5524,9 @@ html[data-mobile-page-scroll] .topbar-shell:not(.topbar-shell--profile)[data-pre
    inline, so the guard flags the textarea and this id-specific rule outranks
    card CSS that stacks :root selectors with !important. */
 .play-composer-card[data-guard-measuring],
-.play-composer-card[data-guard-measuring] * {
+.play-composer-card[data-guard-measuring] *,
+.play-message-editor[data-guard-measuring],
+.play-message-editor[data-guard-measuring] * {
   transition: none !important;
 }
 #yumina-composer-input[data-guard-placeholder]::placeholder {

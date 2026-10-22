@@ -3,12 +3,15 @@ import type { ApiKeyMetadata } from "@yumina/shared";
 import { OpenRouterProvider } from "./openrouter.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAIProvider } from "./openai.js";
+import { ChatGPTProvider } from "./chatgpt.js";
+import { AntigravityProvider } from "./antigravity.js";
+import { ClaudeCodeProvider } from "./claude-code.js";
 import { OllamaProvider } from "./ollama.js";
 import { GoogleProvider } from "./google.js";
 import { CustomProvider } from "./custom.js";
 import { LocalBridgeProvider } from "./local-bridge.js";
 
-export type ProviderName = "openrouter" | "anthropic" | "openai" | "google" | "ollama" | "custom" | "local";
+export type ProviderName = "openrouter" | "anthropic" | "openai" | "google" | "chatgpt" | "claude-code" | "antigravity" | "ollama" | "custom" | "local";
 
 /** Create a provider instance. `baseUrl` and `metadata` are only consulted for `provider === "custom"`.
  *  For `provider === "local"` the first argument is the player's user id, not a key —
@@ -20,8 +23,14 @@ export function createProvider(
   metadata?: ApiKeyMetadata | null,
 ): LLMProvider {
   switch (provider) {
+    case "antigravity":
+      return new AntigravityProvider();
+    case "claude-code":
+      return new ClaudeCodeProvider();
     case "anthropic":
       return new AnthropicProvider(apiKeyOrUrl);
+    case "chatgpt":
+      return new ChatGPTProvider(apiKeyOrUrl);
     case "openai":
       return new OpenAIProvider(apiKeyOrUrl);
     case "google":
@@ -58,9 +67,12 @@ export function createByokProvider(
 
 /** Infer provider from model ID prefix. */
 export function inferProvider(modelId: string): ProviderName {
+  if (modelId.startsWith("antigravity/")) return "antigravity";
+  if (modelId.startsWith("claude-code/")) return "claude-code";
   if (modelId.startsWith("local/")) return "local";
   if (modelId.startsWith("custom/")) return "custom";
   if (modelId.startsWith("anthropic/")) return "anthropic";
+  if (modelId.startsWith("chatgpt/")) return "chatgpt";
   if (modelId.startsWith("openai/")) return "openai";
   if (modelId.startsWith("google/")) return "google";
   if (modelId.startsWith("ollama/")) return "ollama";

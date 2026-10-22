@@ -1,0 +1,96 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Loader2, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useIsLocalEdition } from "@/edition/edition";
+import { useUserProfileStore } from "@/stores/user-profile";
+import { useConfigStore } from "@/stores/config";
+import { useModelsStore } from "@/stores/models";
+
+const apiBase = import.meta.env.VITE_API_URL || "";
+interface Status { installed: boolean; ready: boolean; profileId?: string; defaultModel: string; models: string[]; error?: string }
+async function request<T>(path: string, body?: object): Promise<T> {
+  const response = await fetch(`${apiBase}/api/claude-code${path}`, {
+    method: body ? "POST" : "GET", credentials: "include", signal: AbortSignal.timeout(20_000),
+    ...(body && { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Claude Code request failed");
+  return payload.data;
+}
+
+export function ClaudeCodePanel() {
+  const { t } = useTranslation("profile");
+  const local = useIsLocalEdition();
+  const onThisComputer = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  const activeId = useUserProfileStore(state => state.profile?.preferences?.activeApiKeyId);
+  const selectedModel = useConfigStore(state => state.selectedModel);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [model, setModel] = useState("sonnet");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const mounted = useRef(true);
+  const refresh = useCallback(async () => {
+    const data = await request<Status>("/status");
+    if (mounted.current) { setStatus(data); setModel(data.defaultModel); }
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    if (local && onThisComputer) {
+      setBusy(true);
+      void refresh().catch(e => { if (mounted.current) setError(e.message); }).finally(() => { if (mounted.current) setBusy(false); });
+    }
+    return () => { mounted.current = false; };
+  }, [local, onThisComputer, refresh]);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true); setError("");
+    try { await action(); } catch (e) { if (mounted.current) setError((e as Error).message); }
+    finally { if (mounted.current) setBusy(false); }
+  };
+  const reload = async () => {
+    await useUserProfileStore.getState().forceFetchProfile();
+    useModelsStore.getState().invalidateModels();
+    await useModelsStore.getState().fetchModels();
+    await refresh();
+  };
+  if (!local) return null;
+  const active = !!status?.profileId && status.profileId === activeId && selectedModel.startsWith("claude-code/");
+  return <section className="profile-overview-glass profile-overview-glass--soft rounded-2xl p-6 space-y-4">
+    <h3 className="text-sm font-semibold text-main">{t("claudeCode.title")}</h3>
+    <p className="text-xs text-sub">{t("claudeCode.description")}</p>
+    <p className="text-xs text-sub/70">{t("claudeCode.limitations")}</p>
+    {!onThisComputer ? <p className="text-xs text-amber-200">{t("claudeCode.localOnly")}</p> : <>
+      {status && <p role="status" className="text-xs text-sub">{t(status.ready ? active ? "claudeCode.active" : "claudeCode.ready" : status.installed ? "claudeCode.signInRequired" : "claudeCode.installRequired")}</p>}
+      {!status?.ready && <div className="space-y-2 text-xs text-sub">
+        <p>{t("claudeCode.loginInstructions")}</p>
+        <code className="block rounded-lg bg-black/20 p-3 select-all">claude auth login</code>
+        <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer" className="underline">{t("claudeCode.installGuide")}</a>
+      </div>}
+      {status?.ready && <label className="block space-y-1 text-xs text-sub">
+        <span>{t("claudeCode.model")}</span>
+        <select aria-label={t("claudeCode.model")} value={model} disabled={busy} onChange={event => setModel(event.target.value)}
+          className="profile-overview-input-surface w-full rounded-lg border border-white/10 p-2 text-main">
+          {status.models.map(value => <option key={value} value={value}>{value[0]!.toUpperCase() + value.slice(1)}</option>)}
+        </select>
+      </label>}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(refresh)}>
+          {busy ? <Loader2 aria-hidden="true" className="mr-2 h-3 w-3 animate-spin" /> : <RefreshCw aria-hidden="true" className="mr-2 h-3 w-3" />}{t("claudeCode.refresh")}
+        </Button>
+        {status?.ready && <Button size="sm" disabled={busy} onClick={() => void run(async () => {
+          await request("/connect", { model });
+          useConfigStore.getState().setConfig("selectedModel", `claude-code/${model}`);
+          useConfigStore.getState().setConfig("mixMode", false);
+          useModelsStore.getState().addToRecent(`claude-code/${model}`);
+          await reload();
+        })}>{t("claudeCode.connect")}</Button>}
+        {status?.profileId && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(async () => {
+          await request("/disconnect", {});
+          await reload();
+        })}>{t("claudeCode.disconnect")}</Button>}
+      </div>
+    </>}
+    {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
+    <p className="text-xs text-sub/70">{t("claudeCode.usage")}</p>
+  </section>;
+}

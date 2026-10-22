@@ -105,7 +105,7 @@ function hasOwnText(el: Element): boolean {
   return false;
 }
 
-function isUntouchedPlatformCard(card: HTMLElement, style: CSSStyleDeclaration) {
+function isUntouchedPlatformCard(style: CSSStyleDeclaration) {
   const border = parseColor(style.borderTopColor);
   const surfaceRgb = style.getPropertyValue("--cloudy-surface-rgb").trim().split(/[\s,]+/).map(Number);
   const bg = parseColor(style.backgroundColor);
@@ -136,7 +136,7 @@ function runGuard(card: HTMLElement, textarea: HTMLTextAreaElement) {
   //    card (only where the card left that part at the platform default), and
   //    the textarea itself goes flat.
   const cardStyle = getComputedStyle(card);
-  let untouched = isUntouchedPlatformCard(card, cardStyle);
+  let untouched = isUntouchedPlatformCard(cardStyle);
   if (card.matches(":focus-within")) untouched = lastUntouched.get(card) ?? untouched;
   else lastUntouched.set(card, untouched);
   for (const el of grow ? [grow, textarea] : [textarea]) {
@@ -197,7 +197,7 @@ function runGuard(card: HTMLElement, textarea: HTMLTextAreaElement) {
     textarea.style.setProperty("--composer-guard-placeholder", inkFor(taSurface));
     textarea.setAttribute("data-guard-placeholder", "");
   }
-  card.querySelectorAll<HTMLElement>("button, a, span, label, p, div, svg").forEach((el) => {
+  card.querySelectorAll<HTMLElement>("button, a, span, label, p, div, svg, kbd").forEach((el) => {
     if (el === textarea || !el.getClientRects().length) return;
     if (el.tagName.toLowerCase() === "svg") fixText(el, ICON_MIN);
     else if (el.tagName === "BUTTON" || hasOwnText(el)) fixText(el, LABEL_MIN);

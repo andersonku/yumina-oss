@@ -30,6 +30,8 @@ const vite = await createServer({
   esbuild: { jsx: "automatic" }, server: { middlewareMode: true },
 });
 const { ApiKeysSettings } = await vite.ssrLoadModule("/src/features/settings/api-keys.tsx") as typeof import("./api-keys");
+const { useConfigStore } = await vite.ssrLoadModule("/src/stores/config.ts") as typeof import("../../stores/config");
+const { useUserProfileStore } = await vite.ssrLoadModule("/src/stores/user-profile.ts") as typeof import("../../stores/user-profile");
 const i18n = createInstance();
 await i18n.init({ lng: "en", resources: { en: { profile: JSON.parse(readFileSync(new URL("../../locales/en/profile.json", import.meta.url), "utf8")) } }, interpolation: { escapeValue: false } });
 const realFetch = globalThis.fetch;
@@ -55,9 +57,10 @@ async function input(field: HTMLInputElement, value: string) {
     field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   });
 }
-async function render(run: (calls: string[]) => Promise<void>, reply: unknown = { ok: true, reply: "Hello" }, pending?: Promise<Response>) {
+async function render(run: (calls: string[]) => Promise<void>, reply: unknown = { ok: true, reply: "Hello" }, pending?: Promise<Response>, active = false) {
   const calls: string[] = [];
   const entry = { id: "custom-profile", provider: "custom", label: "Featherless", baseUrl: "https://api.example.com/v1", metadata: { defaultModel: "manual/model" }, createdAt: "2026-09-12" };
+  useUserProfileStore.setState({ profile: { preferences: { activeApiKeyId: active ? entry.id : null } } as never });
   globalThis.fetch = async (url, init) => {
     const path = String(url);
     calls.push(`${init?.method ?? "GET"} ${path}`);
@@ -102,6 +105,17 @@ test("an empty successful payload cannot be displayed as a successful generation
     assert.ok(!dom.window.document.body.textContent?.includes("Test successful"));
     assert.ok(dom.window.document.body.textContent?.includes("Test failed"));
   }, { ok: true, reply: "   " });
+});
+
+test("an active key editor preserves model selections made outside the editor", async () => {
+  useConfigStore.setState({ selectedModel: "chatgpt/plan-model" });
+  await render(async () => {
+    assert.equal(useConfigStore.getState().selectedModel, "chatgpt/plan-model", "opening the editor preserves the selected provider");
+    await input(modelField(), "new/model");
+    assert.equal(useConfigStore.getState().selectedModel, "custom/new/model", "editing the active profile still selects its model");
+    await act(async () => { useConfigStore.setState({ selectedModel: "chatgpt/another-plan-model" }); });
+    assert.equal(useConfigStore.getState().selectedModel, "chatgpt/another-plan-model", "the editor does not undo a picker selection");
+  }, undefined, undefined, true);
 });
 
 test("saving a manual model never triggers model discovery for a custom profile", async () => {

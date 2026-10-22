@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Shuffle, Sparkles } from "lucide-react";
+import { ChatGPTPanel } from "./chatgpt-panel";
+import { AntigravityPanel } from "./antigravity-panel";
+import { ClaudeCodePanel } from "./claude-code-panel";
+import { ChatGPTUsage } from "@/features/chat/chatgpt-usage";
 import { ApiKeysSettings } from "@/features/settings/api-keys";
 import { LocalModelPanel } from "@/features/local-model/local-model-panel";
 import { isLocalModelId } from "@/features/local-model/enabled-flag";
@@ -55,8 +59,14 @@ export function AiProviderTab() {
         </button>
       </div>
 
+      {selectedModel.startsWith("chatgpt/") && <ChatGPTUsage />}
+
       {/* Run on the player's own hardware — free, and the only tier that
           costs us nothing per turn. Sits above BYOK because it needs no key. */}
+      <ChatGPTPanel />
+      <ClaudeCodePanel />
+      <AntigravityPanel />
+
       <LocalModelPanel />
 
       {/* API Keys (BYOK) — always visible */}

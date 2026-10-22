@@ -33,6 +33,7 @@ import { TurnImageState } from "./turn-image-state";
 import { TurnImageCard } from "./turn-image-card";
 import { PortraitViewer, usePortraitViewer } from "./portrait-viewer";
 import { splitTurnImages, splitTurnVideos } from "./turn-image-embeds";
+import { useComposerGuard } from "./composer-guard";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -182,6 +183,8 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [rawExpanded, setRawExpanded] = useState(false);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const editSurfaceRef = useRef<HTMLDivElement>(null);
+  useComposerGuard(editSurfaceRef, editTextareaRef, !!isEditing);
   // A failed turn is recorded on the USER row, not as a synthetic assistant
   // row (see server/src/lib/turn-failure.ts for why). Before 2026-07-30 this
   // only checked assistant rows, and since nothing ever wrote `failed` the
@@ -337,7 +340,7 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
       className={cn(
         "play-message-block group relative",
         isUser && "play-message-block--user",
-        dimmed && "opacity-50",
+        dimmed && !isEditing && "opacity-50",
       )}
     >
       {portraitViewer.open && <PortraitViewer portrait={portraitViewer.open} t={t} onClose={portraitViewer.close} />}
@@ -445,10 +448,11 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
           )}
         >
           {isEditing ? (
-            <div>
+            <div ref={editSurfaceRef} className="play-message-editor">
               <textarea
                 ref={editTextareaRef}
                 autoFocus
+                aria-label={t("edit")}
                 value={editContent}
                 disabled={isSavingEdit}
                 onChange={(e) => {
@@ -464,13 +468,13 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
                     onCancelEdit?.();
                   }
                 }}
-                className="w-full resize-y rounded-md border border-primary/30 bg-white/5 p-2 text-sm leading-relaxed text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/30 focus:outline-none"
+                className="play-message-editor__input w-full resize-y text-sm leading-relaxed"
               />
               <div className="mt-2 flex items-center justify-end gap-2">
                 <button
                   onClick={onCancelEdit}
                   disabled={isSavingEdit}
-                  className="hover-surface flex h-7 items-center gap-1.5 rounded-md px-3 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 [@media(hover:none)]:min-h-10"
+                  className="play-message-editor__cancel flex h-7 items-center gap-1.5 rounded-md px-3 text-xs disabled:pointer-events-none [@media(hover:none)]:min-h-10"
                 >
                   {/* X icon (inline SVG to avoid lucide-react dependency) */}
                   <svg
@@ -486,14 +490,14 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
                     <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>{" "}
                   {t("cancel")}
-                  <kbd className="ml-1 text-[10px] text-muted-foreground/40 [@media(hover:none)]:hidden">
+                  <kbd className="ml-1 text-[10px] [@media(hover:none)]:hidden">
                     Esc
                   </kbd>
                 </button>
                 <button
                   onClick={onSaveEdit}
                   disabled={isSavingEdit || api.isStreaming}
-                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary/15 px-3 text-xs font-medium text-primary transition-colors hover:bg-primary/25 active:bg-primary/25 disabled:pointer-events-none disabled:opacity-60 [@media(hover:none)]:min-h-10"
+                  className="play-message-editor__save flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium disabled:pointer-events-none [@media(hover:none)]:min-h-10"
                 >
                   {/* Check icon (inline SVG) */}
                   <svg
@@ -508,7 +512,7 @@ const MessageBubbleInner: React.FC<MessageBubbleProps> = function MessageBubbleI
                     <polyline points="20 6 9 17 4 12" />
                   </svg>{" "}
                   {isSavingEdit ? t("saving") : t("save")}
-                  <kbd className="ml-1 text-[10px] text-primary/40 [@media(hover:none)]:hidden">
+                  <kbd className="ml-1 text-[10px] [@media(hover:none)]:hidden">
                     {/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘↵" : "Ctrl+Enter"}
                   </kbd>
                 </button>

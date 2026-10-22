@@ -336,6 +336,9 @@ importers:
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
+      jose:
+        specifier: ^6.2.2
+        version: 6.2.2
       jsonrepair:
         specifier: ^3.13.3
         version: 3.13.3
