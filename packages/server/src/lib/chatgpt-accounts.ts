@@ -64,41 +64,60 @@ export async function getChatGPTAccessToken(id: string): Promise<string> {
   });
 }
 
-/** Sign-out keeps the issued registration, but clears all local tokens even
- * when OpenAI cannot confirm remote revocation. */
+const disconnects = new Map<string, { userId: string; promise: Promise<boolean> }>();
+
+export function isChatGPTDisconnecting(id: string): boolean {
+  return disconnects.has(id);
+}
+
+/** Coalesce repeated sign-outs and keep reconnects out of a registration whose
+ * old grant is still being revoked. Network waits never hold a DB transaction. */
 export async function disconnectChatGPTAccount(userId: string, id: string): Promise<boolean> {
+  const pending = disconnects.get(id);
+  if (pending) {
+    if (pending.userId !== userId) throw new Error("ChatGPT account not found.");
+    return pending.promise;
+  }
+  const promise = disconnectAccount(userId, id).finally(() => { disconnects.delete(id); });
+  disconnects.set(id, { userId, promise });
+  return promise;
+}
+
+/** Commit local sign-out before any external request. Snapshot the latest
+ * refresh token under the same row lock used by token rotation. */
+async function disconnectAccount(userId: string, id: string): Promise<boolean> {
   cancelChatGPTRequests(id);
-  return db.transaction(async tx => {
+  const credentials = await db.transaction(async tx => {
     const [row] = await tx.select().from(apiKeys)
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), eq(apiKeys.provider, "chatgpt"))).for("update");
     if (!row) throw new Error("ChatGPT account not found.");
     const credentials = readChatGPTCredentials(row);
-    let revoked = !credentials.refreshToken;
-    if (credentials.refreshToken) {
-      try {
-        const discovery = await fetch(`${CHATGPT_ISSUER}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000), redirect: "error" });
-        if (!discovery.ok) throw new Error("Discovery failed");
-        const config = await discovery.json() as { revocation_endpoint?: string };
-        const endpoint = new URL(config.revocation_endpoint ?? "");
-        if (endpoint.origin !== CHATGPT_ISSUER) throw new Error("Invalid revocation endpoint");
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const response = await fetch(endpoint, {
-              method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({ token: credentials.refreshToken, token_type_hint: "refresh_token", client_id: credentials.clientId }),
-              signal: AbortSignal.timeout(10_000), redirect: "error",
-            });
-            revoked = response.status === 200;
-            if (response.status < 500) break;
-          } catch { /* Retry once, then report unconfirmed revocation. */ }
-          if (!attempt) await new Promise(resolve => setTimeout(resolve, 250));
-        }
-      } catch { /* Local sign-out still completes. */ }
-    }
     const cleared: ChatGPTCredentials = { id, clientId: credentials.clientId, subject: credentials.subject,
       email: credentials.email, scopes: [], expiresAt: 0 };
     await tx.update(apiKeys).set({ ...encryptedChatGPTCredentials(cleared), metadata: { models: [] } }).where(eq(apiKeys.id, id));
     cancelChatGPTRequests(id);
-    return revoked;
+    return credentials;
   });
+  if (!credentials.refreshToken) return true;
+  try {
+    const discovery = await fetch(`${CHATGPT_ISSUER}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000), redirect: "error" });
+    if (!discovery.ok) return false;
+    const config = await discovery.json() as { revocation_endpoint?: string };
+    const endpoint = new URL(config.revocation_endpoint ?? "");
+    if (endpoint.origin !== CHATGPT_ISSUER) return false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token: credentials.refreshToken, token_type_hint: "refresh_token", client_id: credentials.clientId }),
+          signal: AbortSignal.timeout(10_000), redirect: "error",
+        });
+        if (response.status < 500) return response.status === 200;
+      } catch { /* Retry once, then report unconfirmed revocation. */ }
+      if (!attempt) await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  } catch { /* Local sign-out already completed. */ }
+  // No storage writes or cancellations after the network wait: another process
+  // may have established a new session in the meantime.
+  return false;
 }

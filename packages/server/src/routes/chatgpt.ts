@@ -8,7 +8,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { edition } from "../edition/index.js";
 import { env } from "../lib/env.js";
 import type { AppEnv } from "../lib/types.js";
-import { disconnectChatGPTAccount, encryptedChatGPTCredentials, getChatGPTHostId, readChatGPTCredentials } from "../lib/chatgpt-accounts.js";
+import { disconnectChatGPTAccount, encryptedChatGPTCredentials, getChatGPTHostId, isChatGPTDisconnecting, readChatGPTCredentials } from "../lib/chatgpt-accounts.js";
 import { CHATGPT_RESOURCE, applyChatGPTTokens, createChatGPTTransaction, requestChatGPTTokens, validateChatGPTCallback, verifyChatGPTIdentity, type ChatGPTCredentials } from "../lib/chatgpt-oauth.js";
 import { invalidateModelCacheForUser } from "./messages.js";
 
@@ -65,6 +65,7 @@ chatgptRoutes.post("/login", async c => {
   if (body.accountId) {
     const [row] = await db.select().from(apiKeys).where(and(eq(apiKeys.id, body.accountId), eq(apiKeys.userId, userId), eq(apiKeys.provider, "chatgpt")));
     if (!row) return c.json({ error: "ChatGPT account not found" }, 404);
+    if (isChatGPTDisconnecting(row.id)) return c.json({ error: "ChatGPT sign-out is completing. Please wait before reconnecting." }, 409);
     try { previous = readChatGPTCredentials(row); } catch { return c.json({ error: "ChatGPT registration could not be read. Add a new account." }, 400); }
   }
   const existing = attempts.get(userId);
@@ -139,6 +140,12 @@ chatgptRoutes.post("/login", async c => {
   server.unref();
   const address = server.address();
   if (!address || typeof address === "string") { server.close(); return c.json({ error: "Could not start ChatGPT sign-in" }, 503); }
+  // Starting the listener yields; a disconnect may have begun since the first
+  // ownership check. Do not issue a fresh grant while that revocation runs.
+  if (previous && isChatGPTDisconnecting(previous.id)) {
+    server.close();
+    return c.json({ error: "ChatGPT sign-out is completing. Please wait before reconnecting." }, 409);
+  }
   transaction = createChatGPTTransaction(hostId, `http://127.0.0.1:${address.port}/auth/callback`, previous,
     !body.accountId && existing?.status === "error" ? existing.issuedClientId : undefined);
   attempt.timer = setTimeout(() => {

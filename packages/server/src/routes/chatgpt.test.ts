@@ -176,3 +176,27 @@ test("ChatGPT account lifecycle uses isolated browser auth, encrypted storage, s
   assert.equal((await call(`/api/chatgpt/login/${pending}/cancel`, {})).status, 200);
   assert.equal((await call(`/api/chatgpt/login/${pending}`)).status, 404);
 });
+
+test("reconnect is rejected while remote sign-out is pending, without blocking account reads", async t => {
+  const userId = crypto.randomUUID(), id = crypto.randomUUID();
+  currentUser = userId;
+  t.after(() => { currentUser = "chatgpt-fixture"; });
+  await db.insert(user).values({ id: userId, email: `${userId}@test.local`, name: "Fixture" });
+  await db.insert(apiKeys).values({ id, userId, provider: "chatgpt", ...encryptedChatGPTCredentials({
+    id, clientId: "fixture-client", subject: "fixture", accessToken: "fixture-access", refreshToken: "fixture-refresh", scopes: [], expiresAt: Date.now() + 3600_000,
+  }), metadata: { models: ["fixture-model"] } });
+  let entered!: () => void, release!: () => void;
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  t.mock.method(globalThis, "fetch", async () => { entered(); await pending; return new Response(null, { status: 503 }); });
+  const disconnect = call(`/api/chatgpt/accounts/${id}/disconnect`, {});
+  try {
+    await reached;
+    const reconnect = await call("/api/chatgpt/login", { accountId: id });
+    assert.equal(reconnect.status, 409);
+    const accounts = (await json(await call("/api/chatgpt/accounts"))).data;
+    assert.equal(accounts[0].connected, false);
+    assert.deepEqual(accounts[0].models, []);
+  } finally { release(); }
+  assert.equal((await json(await disconnect)).data.revocationConfirmed, false);
+});
