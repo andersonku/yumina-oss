@@ -70,6 +70,10 @@ export function isChatGPTDisconnecting(id: string): boolean {
   return disconnects.has(id);
 }
 
+export function isChatGPTUserDisconnecting(userId: string): boolean {
+  return [...disconnects.values()].some(pending => pending.userId === userId);
+}
+
 /** Coalesce repeated sign-outs and keep reconnects out of a registration whose
  * old grant is still being revoked. Network waits never hold a DB transaction. */
 export async function disconnectChatGPTAccount(userId: string, id: string): Promise<boolean> {

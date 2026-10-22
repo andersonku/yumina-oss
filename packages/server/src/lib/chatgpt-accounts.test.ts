@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { apiKeys, user } from "../db/schema.js";
 import { CHATGPT_ISSUER, type ChatGPTCredentials } from "./chatgpt-oauth.js";
-import { disconnectChatGPTAccount, encryptedChatGPTCredentials, getChatGPTAccessToken, isChatGPTDisconnecting, readChatGPTCredentials } from "./chatgpt-accounts.js";
+import { disconnectChatGPTAccount, encryptedChatGPTCredentials, getChatGPTAccessToken, isChatGPTDisconnecting, isChatGPTUserDisconnecting, readChatGPTCredentials } from "./chatgpt-accounts.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -47,6 +47,8 @@ test("disconnect commits local sign-out and leaves the database available during
     try {
       await entered.promise;
       assert.equal(isChatGPTDisconnecting(id), true);
+      assert.equal(isChatGPTUserDisconnecting(userId), true);
+      assert.equal(isChatGPTUserDisconnecting("other-user"), false);
       const [row] = await promptly(db.select().from(apiKeys).where(eq(apiKeys.id, id)));
       const saved = readChatGPTCredentials(row!);
       assert.equal(saved.accessToken, undefined);
@@ -60,6 +62,7 @@ test("disconnect commits local sign-out and leaves the database available during
     } finally { release.resolve(); await disconnect; }
     assert.equal(requestToken, "fixture-refresh");
     assert.equal(isChatGPTDisconnecting(id), false);
+    assert.equal(isChatGPTUserDisconnecting(userId), false);
   });
 });
 

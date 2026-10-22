@@ -194,6 +194,8 @@ test("reconnect is rejected while remote sign-out is pending, without blocking a
     await reached;
     const reconnect = await call("/api/chatgpt/login", { accountId: id });
     assert.equal(reconnect.status, 409);
+    const addAccount = await call("/api/chatgpt/login", {});
+    assert.equal(addAccount.status, 409, "new-account sign-in may reuse the registration being revoked");
     const accounts = (await json(await call("/api/chatgpt/accounts"))).data;
     assert.equal(accounts[0].connected, false);
     assert.deepEqual(accounts[0].models, []);
