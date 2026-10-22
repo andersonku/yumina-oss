@@ -4939,6 +4939,8 @@ function getProvider(modelId: string): string {
   const map: Record<string, string> = {
     anthropic: "Anthropic",
     openai: "OpenAI",
+    chatgpt: "ChatGPT",
+    antigravity: "Antigravity",
     google: "Google",
     "meta-llama": "Meta",
     mistralai: "Mistral",

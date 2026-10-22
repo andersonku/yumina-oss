@@ -1,3 +1,4 @@
+import { ChatGPTUsage } from "./chatgpt-usage";
 import { savePreferredProvider } from "@/lib/provider-switch";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -800,6 +801,7 @@ function OfficialView({
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-gold/10 text-gold max-[390px]:h-7 max-[390px]:w-6"><Sparkles aria-hidden="true" className="h-4 w-4" /></span>
         <h2 className="mr-auto min-w-0 truncate text-base font-semibold text-white max-[390px]:text-sm">{t("modelBrowser.compactTitle")}</h2>
         {providerSwitch}
+      {selectedModel.startsWith("chatgpt/") && <div className="px-5 py-2"><ChatGPTUsage /></div>}
         {onMixMode && <button type="button" onClick={onMixMode} aria-label={t("modelMix.title")} title={t("modelMix.title")} className={cn("flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-white/55 hover:bg-white/5 hover:text-white [@media(pointer:coarse)]:h-11", isMixActive && "bg-gold/10 text-gold")}><Shuffle className="h-4 w-4" /></button>}
         <button type="button" onClick={onClose} aria-label={t("modelBrowser.closePicker")} className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-white/55 hover:bg-white/5 hover:text-white [@media(pointer:coarse)]:h-11"><X className="h-4 w-4" /></button>
       </div>
@@ -1031,6 +1033,7 @@ function PrivateView({
       </div>
 
       {providerSwitch}
+      {selectedModel.startsWith("chatgpt/") && <div className="px-5 py-2"><ChatGPTUsage /></div>}
 
       <div className="flex items-center gap-2 border-y border-white/[0.06] px-5 py-2">
         <p className="flex-1 text-[11px] leading-snug text-white/45">
@@ -1173,6 +1176,7 @@ function StudioView({
       </div>
 
       {providerSwitch}
+      {selectedModel.startsWith("chatgpt/") && <div className="px-5 py-2"><ChatGPTUsage /></div>}
 
       <p className="border-y border-white/[0.06] px-5 py-2 text-[11px] leading-snug text-white/45">
         {usageNote}

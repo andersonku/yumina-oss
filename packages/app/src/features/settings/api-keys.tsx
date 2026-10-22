@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { useUserProfileStore } from "@/stores/user-profile";
 import { useConfigStore } from "@/stores/config";
 import { composeSelectedModelId } from "@/lib/model-id";
+import { useModelsStore } from "@/stores/models";
 
 const apiBase = import.meta.env.VITE_API_URL || "";
 
@@ -166,7 +167,8 @@ export function ApiKeysSettings() {
       const res = await fetch(`${apiBase}/api/keys`, { credentials: "include" });
       if (res.ok) {
         const { data } = await res.json();
-        setKeys(data);
+        setKeys(data.filter((entry: ApiKeyEntry) => entry.provider !== "chatgpt" && entry.provider !== "claude-code" && entry.provider !== "antigravity"));
+        useModelsStore.getState().invalidateModels();
       }
     } catch { /* silent */ } finally {
       setLoading(false);
@@ -661,18 +663,14 @@ function ProfileEditor({
     return () => clearTimeout(t);
   }, [keyJustSaved]);
 
-  // When this profile is active, mirror the local modelInput into the global
-  // selectedModel so the chat actually uses what's picked here. Without this,
-  // the upper "your model" and lower "available models" would be disconnected.
-  useEffect(() => {
+  // Only an edit here should change the chat model. Keeping an active profile
+  // open must preserve a selection made in the shared model picker.
+  const changeModel = useCallback((value: string) => {
+    setModelInput(value);
     if (!isActive) return;
-    const trimmed = modelInput.trim();
-    if (!trimmed) return;
-    const composed = composeSelectedModelId(entry.provider, trimmed);
-    if (composed && composed !== selectedModel) {
-      setConfig("selectedModel", composed);
-    }
-  }, [isActive, modelInput, entry.provider, selectedModel, setConfig]);
+    const composed = composeSelectedModelId(entry.provider, value);
+    if (composed) setConfig("selectedModel", composed);
+  }, [isActive, entry.provider, setConfig]);
 
   // The reverse direction is handled at activate-time inside the toggle handler
   // (see the Active button onClick) — when the user activates a profile, we
@@ -760,7 +758,7 @@ function ProfileEditor({
         setConnection("connected");
         // ST-style: auto-select first model if user hasn't typed one yet
         if (!modelInput.trim() && models.length > 0) {
-          setModelInput(models[0]!);
+          changeModel(models[0]!);
         }
         // The button and inline status communicate discovery without a toast.
         await onSaved();
@@ -776,7 +774,7 @@ function ProfileEditor({
       setConnection("failed");
       setConnectError((err as Error).message || t("apiKeys.connectionFailed"));
     }
-  }, [entry.id, dirty, save, onSaved, modelInput, isCustom, t]);
+  }, [entry.id, dirty, save, onSaved, modelInput, isCustom, t, changeModel]);
 
   const sendTest = useCallback(async () => {
     // Both guards are already enforced by the button: Test only renders for custom
@@ -920,7 +918,7 @@ function ProfileEditor({
         </label>
         <Select
           value={availableModels.includes(modelInput) ? modelInput : ""}
-          onValueChange={setModelInput}
+          onValueChange={changeModel}
           disabled={availableModels.length === 0 || testing || saving || connection === "connecting"}
           options={[
             { value: "", label: availableModels.length === 0 ? t(isCustom ? "apiKeys.noModelList" : "apiKeys.clickConnectToFetch") : t("apiKeys.selectFromList") },
@@ -941,7 +939,7 @@ function ProfileEditor({
         </label>
         <Input
           value={modelInput}
-          onChange={(e) => setModelInput(e.target.value)}
+          onChange={(e) => changeModel(e.target.value)}
           disabled={testing || saving || connection === "connecting"}
           placeholder={t(isCustom ? "apiKeys.manualModelPlaceholder" : "apiKeys.modelIdPlaceholder")}
           className="profile-overview-input-surface border-white/10 font-mono text-xs"

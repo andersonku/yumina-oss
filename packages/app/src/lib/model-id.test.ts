@@ -38,3 +38,15 @@ test("resolvePrivateSelectedModel prefers the active profile default model", () 
   );
   assert.equal(selected, "custom/openai/gpt-4o");
 });
+
+test("ChatGPT model ids preserve their provider even when an upstream slug contains slashes", () => {
+  assert.equal(composeSelectedModelId("chatgpt", "fixture-model"), "chatgpt/fixture-model");
+  assert.equal(composeSelectedModelId("chatgpt", "vendor/fixture-model"), "chatgpt/vendor/fixture-model");
+  assert.equal(composeSelectedModelId("chatgpt", "chatgpt/fixture-model"), "chatgpt/fixture-model");
+});
+
+test("Antigravity selections keep OAuth routing for Gemini and Claude models", () => {
+  assert.equal(composeSelectedModelId("antigravity", "gemini-4-argon-medium"), "antigravity/gemini-4-argon-medium");
+  assert.equal(composeSelectedModelId("antigravity", "claude-opus-5-5-high"), "antigravity/claude-opus-5-5-high");
+  assert.equal(composeSelectedModelId("antigravity", "antigravity/gemini-4-argon-medium"), "antigravity/gemini-4-argon-medium");
+});

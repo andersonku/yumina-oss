@@ -39,6 +39,7 @@ interface ModelsState {
   localModels: ModelInfo[];
 
   fetchModels: () => Promise<void>;
+  invalidateModels: () => void;
   setLocalModels: (models: ModelInfo[]) => void;
   search: (query: string) => ModelInfo[];
   addToRecent: (modelId: string) => void;
@@ -82,6 +83,9 @@ function providerDisplayName(provider: string): string {
   const map: Record<string, string> = {
     custom: "Custom",
     openai: "OpenAI",
+    chatgpt: "ChatGPT",
+    "claude-code": "Claude Code",
+    antigravity: "Antigravity",
     anthropic: "Anthropic",
     google: "Google",
     openrouter: "OpenRouter",
@@ -95,6 +99,9 @@ function providerDisplayFromModelId(modelId: string): string {
   const map: Record<string, string> = {
     anthropic: "Anthropic",
     openai: "OpenAI",
+    chatgpt: "ChatGPT",
+    "claude-code": "Claude Code",
+    antigravity: "Antigravity",
     google: "Google",
     "meta-llama": "Meta",
     mistralai: "Mistral",
@@ -193,7 +200,7 @@ function buildPrivateModelInfos(provider: string, rawModels: string[]): ModelInf
       id,
       name: bare,
       provider: display,
-      supportsImages: provider === "custom" || provider === "ollama" ? undefined : IMAGE_MODEL_CAPABILITIES[id],
+      supportsImages: (provider === "claude-code" || provider === "antigravity") ? false : provider === "custom" || provider === "ollama" ? undefined : IMAGE_MODEL_CAPABILITIES[id],
       contextLength: 0,
       isCurated: false,
     });
@@ -217,17 +224,28 @@ async function fetchApiKeyEntries(): Promise<ApiKeyEntry[]> {
   return Array.isArray(data) ? data : [];
 }
 
+function privateCatalogEntries(
+  source: Extract<ReturnType<typeof resolveSource>, { kind: "private" }>,
+  entries: ApiKeyEntry[],
+): ApiKeyEntry[] {
+  const active = entries.find(entry => entry.id === source.activeKeyId);
+  if (!active) return entries;
+
+  // ChatGPT and OpenRouter have distinct routing IDs and can share the picker.
+  // Use the active profile for its provider and the newest counterpart, matching
+  // the server's key lookup without exposing models from older credentials.
+  const counterpart = active.provider === "chatgpt" ? "openrouter"
+    : active.provider === "openrouter" ? "chatgpt" : null;
+  const other = counterpart ? entries.filter(entry => entry.provider === counterpart)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] : undefined;
+  return other ? [active, other] : [active];
+}
+
 function savedPrivateModels(
   source: Extract<ReturnType<typeof resolveSource>, { kind: "private" }>,
   entries: ApiKeyEntry[],
 ): ModelInfo[] {
-  const targetEntries = source.activeKeyId
-    ? entries.filter((entry) => entry.id === source.activeKeyId)
-    : entries;
-
-  // If profile.activeApiKeyId is stale/deleted, fall back to saved BYOK
-  // catalogs. The selected model id still determines server-side routing.
-  const effectiveEntries = targetEntries.length > 0 ? targetEntries : entries;
+  const effectiveEntries = privateCatalogEntries(source, entries);
 
   return dedupeModels(
     effectiveEntries.flatMap((entry) =>
@@ -243,8 +261,7 @@ async function fetchLivePrivateModels(
   source: Extract<ReturnType<typeof resolveSource>, { kind: "private" }>,
   entries: ApiKeyEntry[],
 ): Promise<ModelInfo[]> {
-  const active = entries.find((entry) => entry.id === source.activeKeyId);
-  const targets = active ? [active] : entries;
+  const targets = privateCatalogEntries(source, entries);
   const models = await Promise.all(targets.map(async (target) => {
     const fallback = savedPrivateModels({ kind: "private", activeKeyId: target.id }, [target]);
     try {
@@ -382,6 +399,15 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     } finally {
       if (version === requestVersion) pendingSource = null;
     }
+  },
+
+  invalidateModels: () => {
+    // A credential change can keep the same profile ID. Invalidate outstanding
+    // requests too, so an old catalog cannot repopulate after disconnect.
+    requestVersion++;
+    pendingSource = null;
+    const local = get().localModels;
+    set({ models: local, curated: local, lastFetched: 0, lastSourceKey: "", loading: false });
   },
 
   setLocalModels: (localModels: ModelInfo[]) => {

@@ -15,6 +15,7 @@ import { customEndpointFailure, verifyCustomConnection } from "../lib/llm/custom
 import { validateCustomEndpointUrl } from "../lib/ssrf.js";
 import { invalidateModelCacheForUser } from "./messages.js";
 import { mergePrivateCatalog, privateCatalogIsFresh } from "../lib/private-model-catalog.js";
+import { readChatGPTCredentials } from "../lib/chatgpt-accounts.js";
 
 const apiKeyRoutes = new Hono<AppEnv>();
 
@@ -118,6 +119,9 @@ apiKeyRoutes.post("/", async (c) => {
   }
 
   const provider = body.provider ?? "openrouter";
+  if (provider === "antigravity") return c.json({ error: "Connect Antigravity in AI settings" }, 400);
+  if (provider === "claude-code") return c.json({ error: "Connect Claude Code in AI settings" }, 400);
+  if (provider === "chatgpt") return c.json({ error: "Use Continue with ChatGPT to connect this provider" }, 400);
 
   // Custom-provider-specific validation
   let validatedBaseUrl: string | null = null;
@@ -207,6 +211,9 @@ apiKeyRoutes.patch("/:id", async (c) => {
   }
 
   const existing = rows[0]!;
+  if (existing.provider === "antigravity") return c.json({ error: "Manage Antigravity in AI settings" }, 400);
+  if (existing.provider === "claude-code") return c.json({ error: "Manage Claude Code in AI settings" }, 400);
+  if (existing.provider === "chatgpt" && body.key !== undefined) return c.json({ error: "Use Continue with ChatGPT to update credentials" }, 400);
 
   const patch: { baseUrl?: string; label?: string; metadata?: ApiKeyMetadata; encryptedKey?: string; keyIv?: string; keyTag?: string } = {};
 
@@ -297,6 +304,10 @@ apiKeyRoutes.patch("/:id", async (c) => {
 apiKeyRoutes.delete("/:id", async (c) => {
   const currentUser = c.get("user");
   const keyId = c.req.param("id");
+
+  const [existing] = await db.select({ provider: apiKeys.provider }).from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, currentUser.id)));
+  if (existing?.provider === "chatgpt") return c.json({ error: "Disconnect ChatGPT in AI settings to revoke the session" }, 400);
 
   const result = await db
     .delete(apiKeys)
@@ -427,8 +438,9 @@ apiKeyRoutes.post("/:id/list-models", async (c) => {
   const nextMeta = await db.transaction(async (tx) => {
     const [latest] = await tx.select().from(apiKeys)
       .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, currentUser.id))).for("update");
-    if (!latest || latest.encryptedKey !== row.encryptedKey || latest.baseUrl !== row.baseUrl ||
+    if (!latest || (row.provider !== "chatgpt" && latest.encryptedKey !== row.encryptedKey) || latest.baseUrl !== row.baseUrl ||
         JSON.stringify(latest.metadata?.includeHeaders) !== JSON.stringify(row.metadata?.includeHeaders)) return null;
+    if (row.provider === "chatgpt" && !readChatGPTCredentials(latest).accessToken) return null;
     const metadata = mergePrivateCatalog(latest.metadata, bareIds);
     if (!metadata) return null;
     await tx.update(apiKeys).set({ metadata }).where(eq(apiKeys.id, keyId));

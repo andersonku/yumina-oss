@@ -6,6 +6,9 @@
 export function composeSelectedModelId(provider: string, rawModel: string): string {
   const trimmed = rawModel.trim();
   if (!trimmed) return "";
+  if (provider === "antigravity") return trimmed.startsWith("antigravity/") ? trimmed : `antigravity/${trimmed}`;
+  if (provider === "claude-code") return trimmed.startsWith("claude-code/") ? trimmed : `claude-code/${trimmed}`;
+  if (provider === "chatgpt") return trimmed.startsWith("chatgpt/") ? trimmed : `chatgpt/${trimmed}`;
   if (provider === "custom") {
     return trimmed.startsWith("custom/") ? trimmed : `custom/${trimmed}`;
   }

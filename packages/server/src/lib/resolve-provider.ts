@@ -13,6 +13,8 @@ import { ensureWallet } from "./credit-service.js";
 import { resolveEffectivePlanWithEventEntitlements } from "./event-plan-entitlements.js";
 import { env } from "./env.js";
 import { allowsOfficialKeyFallback } from "./provider-selection-policy.js";
+import { antigravityEnabled, isAntigravityModel } from "./antigravity.js";
+import { claudeCodeEnabled, isClaudeCodeModel } from "./claude-code.js";
 
 export type ApiKeyTier = "regular" | "invited" | "byok";
 
@@ -125,7 +127,7 @@ async function getUserMeta(userId: string): Promise<{
   return {
     plan: effectivePlan,
     preferredProvider:
-      prefs?.preferredProvider === "private" ? "private" : "official",
+      env.YUMINA_EDITION === "local" || prefs?.preferredProvider === "private" ? "private" : "official",
   };
 }
 
@@ -182,7 +184,7 @@ export async function resolveProviderForModel(
   if (options?.forceOfficial) {
     if (options.forcePrivate || !allowsOfficialKeyFallback(preferredProvider, options.allowOfficialFallback)) return null;
     // Custom models can never run under official mode (no pricing/billing info)
-    if (providerName === "custom") return null;
+    if (providerName === "custom" || providerName === "chatgpt" || providerName === "claude-code" || providerName === "antigravity") return null;
     // Nor can a local one: forceOfficial exists to keep a protected world's
     // hidden prompt off machines we don't control, and "the player's own PC"
     // is the most uncontrolled of them.
@@ -208,6 +210,32 @@ export async function resolveProviderForModel(
       isByok: true,
       apiKeyTier: "byok",
     };
+  }
+
+  if (providerName === "antigravity") {
+    const model = modelId.slice("antigravity/".length);
+    if (!antigravityEnabled() || !isAntigravityModel(model)) return null;
+    const marker = await getUserApiKey(userId, "antigravity");
+    if (marker !== "local-antigravity") return null;
+    const profiles = await db.select({ metadata: apiKeys.metadata }).from(apiKeys)
+      .where(and(eq(apiKeys.userId, userId), eq(apiKeys.provider, "antigravity")));
+    if (!profiles.some(profile => profile.metadata?.models?.includes(model))) return null;
+    return { provider: createProvider("antigravity", marker), providerName, isByok: true, apiKeyTier: "byok" };
+  }
+
+  if (providerName === "claude-code") {
+    if (!claudeCodeEnabled() || !isClaudeCodeModel(modelId.slice("claude-code/".length))) return null;
+    const marker = await getUserApiKey(userId, "claude-code");
+    return marker === "local-claude-code"
+      ? { provider: createProvider("claude-code", marker), providerName, isByok: true, apiKeyTier: "byok" }
+      : null;
+  }
+
+  // ChatGPT plan models are exclusively user-owned. Never send their routing
+  // prefix to OpenRouter or silently charge a different provider.
+  if (providerName === "chatgpt") {
+    const credentials = await getUserApiKey(userId, "chatgpt");
+    return credentials ? { provider: createByokProvider("chatgpt", credentials), providerName, isByok: true, apiKeyTier: "byok" } : null;
   }
 
   // Private mode: try BYOK first

@@ -1,4 +1,9 @@
 import "./utc-init.js"; // MUST be first — pins the process to UTC before any Date use
+import { sandboxContentSecurityPolicy } from "./lib/sandbox-csp.js";
+import { isLocalSandboxDocument, LOCAL_SANDBOX_CACHE_HEADERS, prepareSandboxAppShell } from "./lib/local-sandbox-document.js";
+import { chatgptRoutes } from "./routes/chatgpt.js";
+import { antigravityRoutes } from "./routes/antigravity.js";
+import { claudeCodeRoutes } from "./routes/claude-code.js";
 import { discoverRoutes } from "./routes/discover.js";
 import fs from "node:fs";
 import { Hono } from "hono";
@@ -266,6 +271,9 @@ app.route("/api/discover", discoverRoutes);
 app.route("/api/worlds", worldRoutes);
 app.route("/api/world-changes", worldChangeRoutes);
 app.route("/api/keys", apiKeyRoutes);
+app.route("/api/chatgpt", chatgptRoutes);
+app.route("/api/claude-code", claudeCodeRoutes);
+app.route("/api/antigravity", antigravityRoutes);
 app.route("/api/local-bridge", localBridgeRoutes);
 // Outside AIs on one card, by token — before any cookie-auth "/api/*" router.
 app.route("/api/agent/v1", agentApiRoutes);
@@ -336,7 +344,7 @@ edition.mountRootRoutes(app);
 // Serve static frontend in production
 if (process.env.NODE_ENV === "production") {
   const indexHtml = fs.existsSync("./public/index.html")
-    ? fs.readFileSync("./public/index.html", "utf-8")
+    ? prepareSandboxAppShell(fs.readFileSync("./public/index.html", "utf-8"), edition.name === "local")
     : null;
 
   // The app shell with the page's own meta tags and, for public pages, its
@@ -375,32 +383,8 @@ if (process.env.NODE_ENV === "production") {
     return c.html(html);
   };
 
-  // Sandbox CSP — the iframe has an opaque origin (sandbox="allow-scripts"
-  // without allow-same-origin), so 'self' = null. Use https: to allow loading
-  // scripts/CSS from the parent domain. The real security boundary is the
-  // iframe sandbox attribute + connect-src 'none'.
-  //
-  // frame-src: allowlist of common static-hosting platforms that trusted card
-  // authors can use to embed their own apps (e.g. Pokemon battle iframe on
-  // *.pages.dev). These hosts all require account creation + have abuse
-  // detection, so they're higher-trust than arbitrary https:. Expand this list
-  // only when a specific card needs a new platform.
-  const SANDBOX_CSP = [
-    "default-src https: 'unsafe-inline' 'unsafe-eval'",
-    "img-src https: data: blob:",
-    "font-src https: data:",
-    // Audio and video: card BGM and voice come from https: (and blob: once a
-    // card builds a clip itself), and the iOS audio unlock in the sandbox
-    // plays a silent data: WAV. Without this they fell back to default-src,
-    // which has no data: or blob:, and the unlock silently failed.
-    "media-src https: data: blob:",
-    "connect-src 'none'",
-    "frame-src https://*.pages.dev https://*.vercel.app https://*.netlify.app https://*.github.io",
-    // Only the app itself may embed the sandbox document. If the sandbox
-    // ever moves to a dedicated origin (VITE_SANDBOX_URL), this must
-    // become the app origin explicitly (e.g. https://yumina.io).
-    "frame-ancestors 'self'",
-  ].join("; ");
+  // Opaque sandbox documents need an explicit source for local HTTP assets.
+  const sandboxCsp = (documentUrl: string) => sandboxContentSecurityPolicy(documentUrl, edition.name === "local");
 
   /** The build emits the sandbox document twice: at its authored path and, so
    *  Cloudflare's /assets/* rule can cache it, under a content hash. The hashed
@@ -413,8 +397,12 @@ if (process.env.NODE_ENV === "production") {
 
   app.use("/sandbox/*", async (c, next) => {
     await next();
-    c.header("Content-Security-Policy", SANDBOX_CSP);
-    c.header("Cache-Control", "no-store");
+    c.header("Content-Security-Policy", sandboxCsp(c.req.url));
+    if (isLocalSandboxDocument(c.req.path, edition.name === "local")) {
+      for (const [name, value] of Object.entries(LOCAL_SANDBOX_CACHE_HEADERS)) c.header(name, value);
+    } else {
+      c.header("Cache-Control", "no-store");
+    }
     // CORS — opaque-origin iframe needs explicit permission to load ES modules
     c.header("Access-Control-Allow-Origin", "*");
   });
@@ -442,7 +430,10 @@ if (process.env.NODE_ENV === "production") {
     c.header("Content-Type", "text/html; charset=utf-8");
     c.header("Cache-Control", "public, max-age=300");
     c.header("CDN-Cache-Control", "public, max-age=300");
-    c.header("Content-Security-Policy", SANDBOX_CSP);
+    c.header("Content-Security-Policy", sandboxCsp(c.req.url));
+    if (isLocalSandboxDocument(reqPath, edition.name === "local")) {
+      for (const [name, value] of Object.entries(LOCAL_SANDBOX_CACHE_HEADERS)) c.header(name, value);
+    }
     c.header("Access-Control-Allow-Origin", "*");
     return c.body(body);
   });
@@ -465,7 +456,7 @@ if (process.env.NODE_ENV === "production") {
       c.header("Cache-Control", "no-store");
     }
     c.header("Access-Control-Allow-Origin", "*");
-    if (isSandboxDoc(c.req.path)) c.header("Content-Security-Policy", SANDBOX_CSP);
+    if (isSandboxDoc(c.req.path)) c.header("Content-Security-Policy", sandboxCsp(c.req.url));
   });
 
   // Cache static images (wallpapers, hero, logo) for 1 day with revalidation
@@ -504,6 +495,12 @@ if (process.env.NODE_ENV === "production") {
     // them DYNAMIC, sending every image to the LA origin. HTML stays no-store so SPA
     // deploys never serve a stale index.html. (2026-06-05 wallpaper/asset-cache fix.)
     onFound: (path, c) => {
+      if (isLocalSandboxDocument(c.req.path, edition.name === "local")) {
+        c.header("Content-Security-Policy", sandboxCsp(c.req.url));
+        c.header("Access-Control-Allow-Origin", "*");
+        for (const [name, value] of Object.entries(LOCAL_SANDBOX_CACHE_HEADERS)) c.header(name, value);
+        return;
+      }
       // The Unperson world runs in an opaque sandbox origin. Only its public
       // textures need cross-origin reads; no credentials or API access here.
       if (c.req.path.startsWith("/experiments/unperson/assets/")) {
